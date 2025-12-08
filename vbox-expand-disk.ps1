@@ -3,8 +3,25 @@ param(
     [string]$VMName
 )
 
-# Set VBoxManage path
-$VBoxManage = "C:\Program Files\Oracle\VirtualBox\VBoxManage.exe"
+# Load configuration from .vbox-setup file
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ConfigFile = Join-Path $ScriptDir ".vbox-setup"
+
+if (Test-Path $ConfigFile) {
+    # Parse configuration file
+    $Config = @{}
+    Get-Content $ConfigFile | Where-Object { $_ -notmatch '^\s*#' -and $_ -match '=' } | ForEach-Object {
+        $key, $value = $_ -split '=', 2
+        $Config[$key.Trim()] = $ExecutionContext.InvokeCommand.ExpandString($value.Trim())
+    }
+    $VBoxManage = $Config['VBOX_MANAGE_PATH']
+    $LVMVolumeGroup = $Config['LVM_VOLUME_GROUP']
+    $LVMLogicalVolume = $Config['LVM_LOGICAL_VOLUME']
+}
+
+if (-not $VBoxManage) { $VBoxManage = "C:\Program Files\Oracle\VirtualBox\VBoxManage.exe" }
+if (-not $LVMVolumeGroup) { $LVMVolumeGroup = "ubuntu-vg" }
+if (-not $LVMLogicalVolume) { $LVMLogicalVolume = "ubuntu-lv" }
 
 # Get SSH port
 $VMInfo = & $VBoxManage showvminfo $VMName --machinereadable 2>&1
@@ -14,8 +31,6 @@ if (-not $SSHPort) {
     Write-Host "Could not find SSH port for VM '$VMName'" -ForegroundColor Red
     exit 1
 }
-
-$SSHKeyPath = "$HOME\.ssh.windows\id_rsa"
 
 Write-Host "Expanding disk on VM '$VMName'..." -ForegroundColor Cyan
 Write-Host "Current layout:" -ForegroundColor Yellow
@@ -33,10 +48,10 @@ Write-Host "Step 2: Resize physical volume..." -ForegroundColor Yellow
 vbox-ssh $VMName "sudo pvresize /dev/sda3"
 
 Write-Host "Step 3: Extend logical volume..." -ForegroundColor Yellow
-vbox-ssh $VMName "sudo lvextend -l +100%FREE /dev/ubuntu-vg/ubuntu-lv"
+vbox-ssh $VMName "sudo lvextend -l +100%FREE /dev/$LVMVolumeGroup/$LVMLogicalVolume"
 
 Write-Host "Step 4: Resize filesystem..." -ForegroundColor Yellow
-vbox-ssh $VMName "sudo resize2fs /dev/ubuntu-vg/ubuntu-lv"
+vbox-ssh $VMName "sudo resize2fs /dev/$LVMVolumeGroup/$LVMLogicalVolume"
 
 Write-Host "`nFinal state:" -ForegroundColor Green
 vbox-ssh $VMName "df -h /"

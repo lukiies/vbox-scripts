@@ -6,3 +6,10 @@
 
 # Don't ignore .gitignore itself
 !.gitignore
+
+# Track README and example configuration
+!README.md
+!.vbox-setup.example
+
+# NEVER track the actual configuration file (contains local paths)
+.vbox-setup

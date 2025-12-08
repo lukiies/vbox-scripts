@@ -6,8 +6,25 @@ param(
     [string[]]$RemainingArgs
 )
 
-# Set VBoxManage path
-$VBoxManage = "C:\Program Files\Oracle\VirtualBox\VBoxManage.exe"
+# Load configuration from .vbox-setup file
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ConfigFile = Join-Path $ScriptDir ".vbox-setup"
+
+if (Test-Path $ConfigFile) {
+    # Parse configuration file
+    $Config = @{}
+    Get-Content $ConfigFile | Where-Object { $_ -notmatch '^\s*#' -and $_ -match '=' } | ForEach-Object {
+        $key, $value = $_ -split '=', 2
+        $Config[$key.Trim()] = $ExecutionContext.InvokeCommand.ExpandString($value.Trim())
+    }
+    $VBoxManage = $Config['VBOX_MANAGE_PATH']
+    $SSHKeyPath = $Config['SSH_KEY_PATH']
+    $SSHUsername = $Config['SSH_DEFAULT_USER']
+}
+
+if (-not $VBoxManage) { $VBoxManage = "C:\Program Files\Oracle\VirtualBox\VBoxManage.exe" }
+if (-not $SSHKeyPath) { $SSHKeyPath = "$HOME\.ssh.windows\id_rsa" }
+if (-not $SSHUsername) { $SSHUsername = "root" }
 
 if (-not (Test-Path $VBoxManage)) {
     Write-Host "VBoxManage not found at: $VBoxManage" -ForegroundColor Red
@@ -30,9 +47,6 @@ if (-not $SSHPort) {
     exit 1
 }
 
-# Define SSH key path
-$SSHKeyPath = "$HOME\.ssh.windows\id_rsa"
-
 if (-not (Test-Path $SSHKeyPath)) {
     Write-Host "SSH key not found at: $SSHKeyPath" -ForegroundColor Red
     exit 1
@@ -53,7 +67,7 @@ $SSHCommand = @(
     'LogLevel=ERROR'
     '-p'
     $SSHPort
-    'root@localhost'
+    "$SSHUsername@localhost"
 )
 
 # Add any remaining arguments (could be SSH options or remote commands)

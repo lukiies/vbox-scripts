@@ -1,0 +1,38 @@
+# VirtualBox Scripts Configuration File - EXAMPLE
+# Copy this file to .vbox-setup and customize for your system
+# DO NOT commit .vbox-setup to version control!
+
+# VirtualBox installation path
+# Default: C:\Program Files\Oracle\VirtualBox\VBoxManage.exe
+VBOX_MANAGE_PATH=C:\Program Files\Oracle\VirtualBox\VBoxManage.exe
+
+# Default OVA/OVF template file path for creating new VMs
+# UPDATE THIS to point to your Ubuntu template file
+# Example: C:\VMs\Templates\Ubuntu-20.04-minimal.ova
+IMPORT_TEMPLATE_PATH=C:\path\to\your\Ubuntu-20.04-minimal.ova
+
+# VirtualBox VMs base directory
+# Default: C:\Users\USERNAME\VirtualBox VMs
+# Use $env:USERNAME to automatically insert current username
+VBOX_VMS_FOLDER=C:\Users\$env:USERNAME\VirtualBox VMs
+
+# SSH configuration
+# Path to your SSH private key
+# Default: ~/.ssh.windows/id_rsa
+SSH_KEY_PATH=$HOME\.ssh.windows\id_rsa
+
+# Default SSH username for VMs
+# Default: root
+SSH_DEFAULT_USER=root
+
+# Default disk size for new VMs (in GB)
+# If user accepts default at prompt, disk will NOT be expanded (saves time)
+# Default: 12.5
+DEFAULT_DISK_SIZE=12.5
+
+# LVM configuration (for Ubuntu VMs with LVM)
+# These should match your Ubuntu template's LVM setup
+# Default volume group: ubuntu-vg
+# Default logical volume: ubuntu-lv
+LVM_VOLUME_GROUP=ubuntu-vg
+LVM_LOGICAL_VOLUME=ubuntu-lv

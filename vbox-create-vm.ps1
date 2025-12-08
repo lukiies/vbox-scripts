@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory=$false)]
-    [string]$ImportFile = "C:\Users\lukii\OneDrive - ITAnalytics Ltd\Documents\clients\manbroker\2025-12-08 vbox\exports\Ubuntu-20.04-minimal.ova",
+    [string]$ImportFile,
 
     [Parameter(Mandatory=$true)]
     [string]$NewVMName,
@@ -9,28 +9,70 @@ param(
     [int]$HostPort,
 
     [Parameter(Mandatory=$false)]
-    [string]$SSHUsername = "root",
+    [string]$SSHUsername,
 
     [Parameter(Mandatory=$false)]
     [switch]$SkipHostnameChange
 )
 
+# Load configuration from .vbox-setup file
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ConfigFile = Join-Path $ScriptDir ".vbox-setup"
+
+if (-not (Test-Path $ConfigFile)) {
+    Write-Host "Configuration file not found: $ConfigFile" -ForegroundColor Red
+    Write-Host "Please create .vbox-setup file in the scripts directory." -ForegroundColor Yellow
+    Write-Host "See .vbox-setup.example for template." -ForegroundColor Yellow
+    exit 1
+}
+
+# Parse configuration file
+$Config = @{}
+Get-Content $ConfigFile | Where-Object { $_ -notmatch '^\s*#' -and $_ -match '=' } | ForEach-Object {
+    $key, $value = $_ -split '=', 2
+    $Config[$key.Trim()] = $ExecutionContext.InvokeCommand.ExpandString($value.Trim())
+}
+
+# Set defaults from config if not provided as parameters
+if (-not $ImportFile) {
+    $ImportFile = $Config['IMPORT_TEMPLATE_PATH']
+}
+if (-not $SSHUsername) {
+    $SSHUsername = $Config['SSH_DEFAULT_USER']
+    if (-not $SSHUsername) { $SSHUsername = "root" }
+}
+
+$VBoxManage = $Config['VBOX_MANAGE_PATH']
+if (-not $VBoxManage) { $VBoxManage = "C:\Program Files\Oracle\VirtualBox\VBoxManage.exe" }
+
+$SSHKeyPath = $Config['SSH_KEY_PATH']
+if (-not $SSHKeyPath) { $SSHKeyPath = "$HOME\.ssh.windows\id_rsa" }
+
+$VMsFolder = $Config['VBOX_VMS_FOLDER']
+if (-not $VMsFolder) { $VMsFolder = "C:\Users\$env:USERNAME\VirtualBox VMs" }
+
+$DefaultDiskSize = $Config['DEFAULT_DISK_SIZE']
+if (-not $DefaultDiskSize) { $DefaultDiskSize = 12.5 }
+
+$LVMVolumeGroup = $Config['LVM_VOLUME_GROUP']
+if (-not $LVMVolumeGroup) { $LVMVolumeGroup = "ubuntu-vg" }
+
+$LVMLogicalVolume = $Config['LVM_LOGICAL_VOLUME']
+if (-not $LVMLogicalVolume) { $LVMLogicalVolume = "ubuntu-lv" }
+
 # Prompt for disk size if not provided
-$DiskSizeInput = Read-Host "Enter disk size in GB (default: 12.5)"
+$DiskSizeInput = Read-Host "Enter disk size in GB (default: $DefaultDiskSize)"
 if ([string]::IsNullOrWhiteSpace($DiskSizeInput)) {
-    $DiskSizeGB = 12.5
+    $DiskSizeGB = [double]$DefaultDiskSize
     $SkipDiskExpansion = $true
 } else {
     $DiskSizeGB = [double]$DiskSizeInput
     $SkipDiskExpansion = $false
 }
 
-# Set VBoxManage path
-$VBoxManage = "C:\Program Files\Oracle\VirtualBox\VBoxManage.exe"
-
 if (-not (Test-Path $VBoxManage)) {
     Write-Host "VBoxManage not found at: $VBoxManage" -ForegroundColor Red
-    Write-Host "Please install VirtualBox or update the path in this script." -ForegroundColor Red
+    Write-Host "Please install VirtualBox or update VBOX_MANAGE_PATH in .vbox-setup" -ForegroundColor Red
     exit 1
 }
 
@@ -71,7 +113,7 @@ if (-not $SkipDiskExpansion) {
     Write-Host "Resizing disk to ${DiskSizeGB}GB..." -ForegroundColor Cyan
 
     # Get the disk file path - look for disk in VM's folder
-    $VMFolder = "C:\Users\$env:USERNAME\VirtualBox VMs\$NewVMName"
+    $VMFolder = Join-Path $VMsFolder $NewVMName
     $DiskPath = Get-ChildItem -Path $VMFolder -Filter "*.vmdk" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
 
     if (-not $DiskPath) {
@@ -143,9 +185,6 @@ if (-not $SkipHostnameChange) {
         "echo '$NewVMName' > /etc/hostname"
     )
 
-    # Define SSH key path
-    $SSHKeyPath = "$HOME\.ssh.windows\id_rsa"
-
     # Check if SSH key exists
     if (-not (Test-Path $SSHKeyPath)) {
         Write-Host "SSH key not found at: $SSHKeyPath" -ForegroundColor Red
@@ -170,8 +209,8 @@ if (-not $SkipHostnameChange) {
             # Run each expansion command separately to handle failures gracefully
             vbox-ssh $NewVMName "sudo growpart /dev/sda 3 2>/dev/null || echo ''" | Out-Null
             vbox-ssh $NewVMName "sudo pvresize /dev/sda3 2>/dev/null" | Out-Null
-            vbox-ssh $NewVMName "sudo lvextend -l +100%FREE /dev/ubuntu-vg/ubuntu-lv 2>/dev/null" | Out-Null
-            vbox-ssh $NewVMName "sudo resize2fs /dev/ubuntu-vg/ubuntu-lv 2>/dev/null" | Out-Null
+            vbox-ssh $NewVMName "sudo lvextend -l +100%FREE /dev/$LVMVolumeGroup/$LVMLogicalVolume 2>/dev/null" | Out-Null
+            vbox-ssh $NewVMName "sudo resize2fs /dev/$LVMVolumeGroup/$LVMLogicalVolume 2>/dev/null" | Out-Null
 
             # Get the final disk size
             $NewSize = vbox-ssh $NewVMName "df -h / | tail -1 | awk '{print \`$2}'" 2>$null

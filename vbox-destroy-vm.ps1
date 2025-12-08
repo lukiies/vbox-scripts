@@ -6,12 +6,25 @@ param(
     [switch]$Force
 )
 
-# Set VBoxManage path
-$VBoxManage = "C:\Program Files\Oracle\VirtualBox\VBoxManage.exe"
+# Load configuration from .vbox-setup file
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ConfigFile = Join-Path $ScriptDir ".vbox-setup"
+
+if (Test-Path $ConfigFile) {
+    # Parse configuration file
+    $Config = @{}
+    Get-Content $ConfigFile | Where-Object { $_ -notmatch '^\s*#' -and $_ -match '=' } | ForEach-Object {
+        $key, $value = $_ -split '=', 2
+        $Config[$key.Trim()] = $ExecutionContext.InvokeCommand.ExpandString($value.Trim())
+    }
+    $VBoxManage = $Config['VBOX_MANAGE_PATH']
+}
+
+if (-not $VBoxManage) { $VBoxManage = "C:\Program Files\Oracle\VirtualBox\VBoxManage.exe" }
 
 if (-not (Test-Path $VBoxManage)) {
     Write-Host "VBoxManage not found at: $VBoxManage" -ForegroundColor Red
-    Write-Host "Please install VirtualBox or update the path in this script." -ForegroundColor Red
+    Write-Host "Please install VirtualBox or update VBOX_MANAGE_PATH in .vbox-setup" -ForegroundColor Red
     exit 1
 }
 
