@@ -1,0 +1,8 @@
+# Ignore everything in this directory
+*
+
+# But track files starting with "vbox"
+!vbox*
+
+# Don't ignore .gitignore itself
+!.gitignore
