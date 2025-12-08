@@ -30,7 +30,12 @@ if (-not (Test-Path $ConfigFile)) {
 $Config = @{}
 Get-Content $ConfigFile | Where-Object { $_ -notmatch '^\s*#' -and $_ -match '=' } | ForEach-Object {
     $key, $value = $_ -split '=', 2
-    $Config[$key.Trim()] = $ExecutionContext.InvokeCommand.ExpandString($value.Trim())
+    $value = $value.Trim()
+    # Remove surrounding quotes if present
+    if ($value -match '^"(.*)"$') {
+        $value = $matches[1]
+    }
+    $Config[$key.Trim()] = $ExecutionContext.InvokeCommand.ExpandString($value)
 }
 
 # Set defaults from config if not provided as parameters
