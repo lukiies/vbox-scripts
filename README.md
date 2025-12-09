@@ -20,6 +20,7 @@ A collection of PowerShell scripts for automating VirtualBox VM lifecycle manage
 - **Hostname customization** during VM creation
 - **Headless VM management** (start, stop, destroy)
 - **Transparent SSH proxy** for easy VM access
+- **Snapshot management** for fast iterative testing (50-100x faster than recreating VMs)
 - **Clean, color-coded output** for better user experience
 
 ## 📦 Prerequisites
@@ -221,6 +222,73 @@ vbox-expand-disk myvm
 
 ---
 
+### vbox-snapshot-set.ps1
+
+Creates an initial baseline snapshot for a VM to enable fast rollback during iterative testing.
+
+**Features**:
+- Creates single "initial-baseline" snapshot per VM (prevents snapshot accumulation)
+- Can snapshot running VMs (creates live snapshot)
+- Prevents duplicate snapshots with clear error messages
+- Customizable snapshot name and description
+
+**Parameters**:
+- `-VMName` (required): Name of the VM to snapshot
+- `-SnapshotName` (optional): Custom snapshot name (default: "initial-baseline")
+- `-Description` (optional): Snapshot description
+
+**Usage**:
+```powershell
+# Create initial snapshot with default name
+vbox-snapshot-set myvm
+
+# Custom snapshot name and description
+vbox-snapshot-set myvm -SnapshotName "clean-state" -Description "Ready for restore testing"
+```
+
+**Output**:
+- Creates snapshot and displays current snapshots
+- Shows instructions for rollback
+
+---
+
+### vbox-snapshot-rollback.ps1
+
+Quickly restores VM to initial baseline snapshot state (5-20 seconds vs 5-15 minutes to recreate).
+
+**Features**:
+- Automatically powers off VM if running
+- Restores to baseline snapshot
+- Automatically starts VM after restore (unless `-NoStart`)
+- Shows SSH connection info after restore
+- Provides workflow reminders
+
+**Parameters**:
+- `-VMName` (required): Name of the VM to rollback
+- `-SnapshotName` (optional): Custom snapshot name (default: "initial-baseline")
+- `-NoStart` (optional): Leave VM powered off after restore
+
+**Usage**:
+```powershell
+# Rollback and restart VM (typical workflow)
+vbox-snapshot-rollback myvm
+
+# Rollback but leave VM powered off
+vbox-snapshot-rollback myvm -NoStart
+
+# Rollback to custom snapshot name
+vbox-snapshot-rollback myvm -SnapshotName "clean-state"
+```
+
+**Output**:
+- VM restored to snapshot state
+- VM restarted and ready for testing
+- Displays workflow reminder
+
+**Performance**: ~50-100x faster than destroying and recreating VM
+
+---
+
 ## 💡 Usage Examples
 
 ### Example 1: Create and access a new VM
@@ -294,6 +362,61 @@ vbox-ssh web1 "hostname"
 
 ```powershell
 vbox-create-vm -ImportFile "D:\VMs\Templates\Ubuntu-22.04.ova" -NewVMName "custom" -HostPort 2210
+```
+
+### Example 6: Iterative testing workflow with snapshots
+
+```powershell
+# 1. Create VM for testing
+vbox-create-vm -NewVMName "restore-test" -HostPort 2210
+
+# 2. Configure VM (install prerequisites, etc.)
+vbox-ssh restore-test
+# ... install packages, configure settings ...
+exit
+
+# 3. Create baseline snapshot
+vbox-snapshot-set restore-test
+
+# 4. Iterative testing cycle
+# Run your restore script and test
+vbox-ssh restore-test "bash /path/to/restore-script.sh"
+
+# Check results
+vbox-ssh restore-test "df -h && systemctl status myapp"
+
+# 5. Rollback to clean state (5-20 seconds!)
+vbox-snapshot-rollback restore-test
+
+# 6. Make changes to restore script and repeat
+# The VM is now back to pristine state - test again!
+vbox-ssh restore-test "bash /path/to/restore-script-v2.sh"
+```
+
+**Performance Comparison**:
+- **Without snapshots**: 5-15 minutes per test iteration (destroy + recreate VM)
+- **With snapshots**: 5-20 seconds per test iteration (rollback)
+- **Speed improvement**: 50-100x faster
+
+### Example 7: Multiple snapshot points
+
+```powershell
+# Create VM
+vbox-create-vm -NewVMName "app-test" -HostPort 2211
+
+# Create snapshot at clean state
+vbox-snapshot-set app-test -SnapshotName "clean" -Description "Fresh OS install"
+
+# Install dependencies
+vbox-ssh app-test "sudo apt update && sudo apt install -y nginx postgresql"
+
+# Create snapshot after dependencies
+vbox-snapshot-set app-test -SnapshotName "deps-installed" -Description "All dependencies installed"
+
+# Now you can rollback to either snapshot:
+vbox-snapshot-rollback app-test -SnapshotName "clean"  # Back to fresh OS
+# or
+vbox-snapshot-rollback app-test -SnapshotName "deps-installed"  # Back to ready state
 ```
 
 ## 🔒 Security Notes
